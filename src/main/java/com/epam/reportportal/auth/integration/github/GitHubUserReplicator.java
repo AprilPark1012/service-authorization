@@ -47,6 +47,7 @@ import com.google.common.base.Strings;
 import org.springframework.stereotype.Component;
 
 import static com.epam.ta.reportportal.commons.EntityUtils.normalizeId;
+import static com.google.common.base.Strings.isNullOrEmpty;
 
 /**
  * Replicates GitHub account info with internal ReportPortal's database
@@ -140,9 +141,7 @@ public class GitHubUserReplicator extends AbstractUserReplicator {
 		email = normalizeId(email);
 		checkEmail(email);
 		user.setEmail(email);
-		if (!Strings.isNullOrEmpty(userResource.name)) {
-			user.setFullName(userResource.name);
-		}
+		user.setFullName(isNullOrEmpty(user.getFullName()) ? user.getLogin() : user.getFullName());
 		user.setMetadata(defaultMetaData());
 		Object avatarUrl = userResource.avatarUrl;
 		user.setAttachment(uploadAvatar(gitHubClient, login, avatarUrl));
