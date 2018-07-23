@@ -20,7 +20,7 @@
  */
 package com.epam.reportportal.auth.endpoint;
 
-import com.epam.reportportal.auth.store.MutableClientRegistrationRepository;
+import com.epam.ta.reportportal.dao.MutableClientRegistrationRepository;
 import com.epam.ta.reportportal.ws.model.OperationCompletionRS;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
