@@ -5,12 +5,15 @@ import com.epam.reportportal.auth.ReportPortalClient;
 import com.epam.reportportal.auth.ReportPortalUser;
 import com.epam.reportportal.auth.basic.BasicPasswordAuthenticationProvider;
 import com.epam.reportportal.auth.basic.DatabaseUserDetailsService;
-import com.epam.reportportal.auth.integration.MutableClientRegistrationRepository;
+import com.epam.reportportal.auth.integration.github.GitHubOAuth2UserService;
+import com.epam.reportportal.auth.integration.github.GitHubUserReplicator;
 import com.epam.reportportal.auth.integration.ldap.ActiveDirectoryAuthProvider;
 import com.epam.reportportal.auth.integration.ldap.LdapAuthProvider;
 import com.epam.reportportal.auth.integration.ldap.LdapUserReplicator;
 import com.epam.ta.reportportal.dao.AuthConfigRepository;
+import com.epam.ta.reportportal.dao.MutableClientRegistrationRepository;
 import com.epam.ta.reportportal.dao.OAuthRegistrationRepository;
+import com.epam.ta.reportportal.dao.UserRepository;
 import com.epam.ta.reportportal.entity.project.ProjectRole;
 import com.epam.ta.reportportal.entity.user.UserRole;
 import com.google.common.base.Charsets;
@@ -28,11 +31,15 @@ import org.springframework.security.config.annotation.authentication.builders.Au
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.config.oauth2.client.CommonOAuth2Provider;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.userinfo.DelegatingOAuth2UserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.config.annotation.configurers.ClientDetailsServiceConfigurer;
 import org.springframework.security.oauth2.config.annotation.web.configuration.AuthorizationServerConfigurerAdapter;
 import org.springframework.security.oauth2.config.annotation.web.configuration.EnableAuthorizationServer;
@@ -40,6 +47,7 @@ import org.springframework.security.oauth2.config.annotation.web.configuration.E
 import org.springframework.security.oauth2.config.annotation.web.configuration.ResourceServerConfigurerAdapter;
 import org.springframework.security.oauth2.config.annotation.web.configurers.AuthorizationServerEndpointsConfigurer;
 import org.springframework.security.oauth2.config.annotation.web.configurers.AuthorizationServerSecurityConfigurer;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.oauth2.provider.token.DefaultAccessTokenConverter;
 import org.springframework.security.oauth2.provider.token.DefaultTokenServices;
 import org.springframework.security.oauth2.provider.token.DefaultUserAuthenticationConverter;
@@ -49,6 +57,8 @@ import org.springframework.security.oauth2.provider.token.store.JwtTokenStore;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -91,12 +101,51 @@ public class SecurityConfiguration {
 				.and()
 					.httpBasic()
 				.and()
-					.oauth2Login().clientRegistrationRepository(clientRegistrationRepository())
-					.redirectionEndpoint().baseUri(SSO_LOGIN_PATH).and()
-					.authorizationEndpoint().baseUri(SSO_LOGIN_PATH).and()
-//					.loginPage(SSO_LOGIN_PATH + "/{registrationId}")
-					.successHandler(successHandler);
-			//@formatter:on
+					.oauth2Login()
+					  .redirectionEndpoint()
+				//TODO: change url
+						.baseUri("/testUrl" + "/*")
+						  .and()
+					  .authorizationEndpoint()
+						.baseUri(SSO_LOGIN_PATH)
+						  .and()
+						.userInfoEndpoint()
+						.userService(oauth2UserService())
+						  .and()
+						.successHandler(successHandler);
+        //@formatter:on
+		}
+
+		@Autowired
+		OAuthRegistrationRepository oAuthRegistrationRepository;
+
+		@Bean
+		public MutableClientRegistrationRepository clientRegistrationRepository() {
+			MutableClientRegistrationRepository clientRegRepo = new MutableClientRegistrationRepository(oAuthRegistrationRepository);
+			clientRegRepo.save(githubClientRegistration());
+			return clientRegRepo;
+		}
+
+		private ClientRegistration githubClientRegistration() {
+			return CommonOAuth2Provider.GITHUB.getBuilder("github")
+					.clientId("1cfe6f79200900b2a2fc")
+					.clientSecret("878dc0131346705a34062f56c1d5229edcd1083c")
+					.redirectUriTemplate("{baseUrl}" + "/testUrl" + "/{registrationId}")
+					.scope("read:user", "user:email")
+					.clientName("github")
+					.build();
+		}
+
+		@Autowired
+		private UserRepository userRepository;
+
+		@Autowired
+		private GitHubUserReplicator gitHubUserReplicator;
+
+		private OAuth2UserService<OAuth2UserRequest, OAuth2User> oauth2UserService() {
+			List<OAuth2UserService<OAuth2UserRequest, OAuth2User>> services = new LinkedList<>();
+			services.add(new GitHubOAuth2UserService(userRepository, gitHubUserReplicator));
+			return new DelegatingOAuth2UserService<>(services);
 		}
 
 		@Override
@@ -137,15 +186,6 @@ public class SecurityConfiguration {
 		public AuthenticationManager authenticationManager() throws Exception {
 			return super.authenticationManager();
 		}
-
-		@Autowired
-		OAuthRegistrationRepository oAuthRegistrationRepository;
-
-		@Bean
-		public ClientRegistrationRepository clientRegistrationRepository() {
-			return new MutableClientRegistrationRepository(oAuthRegistrationRepository);
-		}
-
 	}
 
 	@Configuration
